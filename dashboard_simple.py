@@ -51,13 +51,35 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Header
-st.markdown("""
-<div class="main-header">
-    <h1>🎯 TAWAQQUL SCANNER</h1>
-    <p>Smart Money Liquidity Hunter • Multi-Swing Detection • BULLISH Only</p>
-</div>
-""", unsafe_allow_html=True)
+# Header with Logo
+import base64
+
+def get_logo_base64():
+    """Get logo as base64 for embedding"""
+    logo_path = os.path.join(os.path.dirname(__file__), "logo.png")
+    if os.path.exists(logo_path):
+        with open(logo_path, "rb") as f:
+            return base64.b64encode(f.read()).decode()
+    return None
+
+logo_b64 = get_logo_base64()
+if logo_b64:
+    st.markdown(f"""
+    <div class="main-header" style="display: flex; align-items: center; gap: 20px;">
+        <img src="data:image/png;base64,{logo_b64}" style="height: 70px; filter: invert(1);">
+        <div>
+            <h1 style="margin: 0;">TAWAQQUL SCANNER</h1>
+            <p style="margin: 5px 0 0 0;">Smart Money Liquidity Hunter • Multi-Swing Detection • BULLISH Only</p>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+else:
+    st.markdown("""
+    <div class="main-header">
+        <h1>🎯 TAWAQQUL SCANNER</h1>
+        <p>Smart Money Liquidity Hunter • Multi-Swing Detection • BULLISH Only</p>
+    </div>
+    """, unsafe_allow_html=True)
 
 # ========== HELPER FUNCTIONS ==========
 @st.cache_data(ttl=3600)
