@@ -1,22 +1,13 @@
 #!/usr/bin/env python3
 """
-Liquidity Grab Scanner Dashboard - Clean & Simple Version
+Liquidity Grab Scanner Dashboard - Cloud Version
+Works with live yfinance data (no cache required)
 """
 import streamlit as st
 import pandas as pd
+import yfinance as yf
 import os
-import sys
-from pathlib import Path
 from datetime import datetime, timedelta
-
-# Add current directory to path for imports
-sys.path.insert(0, os.path.dirname(__file__))
-
-# Import scanner functions
-from smc_alerts import (
-    load_tickers, get_data, detect_liquidity_grab, 
-    print_alerts, setup_cache, USE_CACHE, CACHE_DIR, PERIOD
-)
 
 st.set_page_config(
     page_title="Liquidity Scanner", 
@@ -25,15 +16,15 @@ st.set_page_config(
     page_icon="📊"
 )
 
+# Settings
+PERIOD = "6mo"
+SWING_LEFT = 2
+SWING_RIGHT = 2
+
 # Simple Clean CSS
 st.markdown("""
 <style>
-    /* Clean Dark Theme */
-    .stApp {
-        background-color: #0e1117;
-    }
-    
-    /* Header */
+    .stApp { background-color: #0e1117; }
     .main-header {
         background: linear-gradient(90deg, #1e3a5f, #2d5a87);
         padding: 20px 30px;
@@ -41,26 +32,9 @@ st.markdown("""
         margin-bottom: 20px;
         border-left: 4px solid #00d4ff;
     }
-    
-    .main-header h1 {
-        color: #ffffff;
-        font-size: 1.8em;
-        margin: 0;
-        font-weight: 600;
-    }
-    
-    .main-header p {
-        color: #a0c4e8;
-        margin: 5px 0 0 0;
-        font-size: 0.95em;
-    }
-    
-    /* Sidebar */
-    [data-testid="stSidebar"] {
-        background-color: #161b22;
-    }
-    
-    /* Cards */
+    .main-header h1 { color: #ffffff; font-size: 1.8em; margin: 0; font-weight: 600; }
+    .main-header p { color: #a0c4e8; margin: 5px 0 0 0; font-size: 0.95em; }
+    [data-testid="stSidebar"] { background-color: #161b22; }
     .metric-card {
         background: #1e2530;
         padding: 15px 20px;
@@ -68,85 +42,8 @@ st.markdown("""
         border-left: 3px solid #00d4ff;
         margin: 5px 0;
     }
-    
-    .metric-card h3 {
-        color: #8b949e;
-        font-size: 0.85em;
-        margin: 0;
-        font-weight: 400;
-    }
-    
-    .metric-card .value {
-        color: #ffffff;
-        font-size: 1.8em;
-        font-weight: 600;
-        margin: 5px 0 0 0;
-    }
-    
-    /* Signal Cards */
-    .signal-bullish {
-        background: linear-gradient(90deg, rgba(0, 200, 83, 0.1), transparent);
-        border-left: 3px solid #00c853;
-        padding: 12px 15px;
-        border-radius: 5px;
-        margin: 8px 0;
-    }
-    
-    .signal-bearish {
-        background: linear-gradient(90deg, rgba(255, 82, 82, 0.1), transparent);
-        border-left: 3px solid #ff5252;
-        padding: 12px 15px;
-        border-radius: 5px;
-        margin: 8px 0;
-    }
-    
-    /* Stock name */
-    .stock-name {
-        color: #00d4ff;
-        font-weight: 600;
-        font-size: 1.1em;
-    }
-    
-    /* Buttons */
-    .stButton > button {
-        background: linear-gradient(90deg, #0066cc, #0088ff);
-        color: white;
-        border: none;
-        padding: 10px 25px;
-        border-radius: 6px;
-        font-weight: 500;
-    }
-    
-    .stButton > button:hover {
-        background: linear-gradient(90deg, #0077dd, #0099ff);
-    }
-    
-    /* Expander */
-    .streamlit-expanderHeader {
-        background: #1e2530;
-        border-radius: 5px;
-    }
-    
-    /* Info boxes */
-    .info-box {
-        background: #1e2530;
-        padding: 15px;
-        border-radius: 8px;
-        border: 1px solid #30363d;
-    }
-    
-    /* Status indicator */
-    .status-dot {
-        display: inline-block;
-        width: 8px;
-        height: 8px;
-        border-radius: 50%;
-        margin-right: 8px;
-    }
-    
-    .status-green { background: #00c853; }
-    .status-red { background: #ff5252; }
-    .status-yellow { background: #ffc107; }
+    .metric-card h3 { color: #8b949e; font-size: 0.85em; margin: 0; font-weight: 400; }
+    .metric-card .value { color: #ffffff; font-size: 1.8em; font-weight: 600; margin: 5px 0 0 0; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -158,31 +55,98 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# Setup cache
-setup_cache()
+# ========== HELPER FUNCTIONS ==========
+@st.cache_data(ttl=3600)  # Cache for 1 hour
+def download_data(ticker):
+    """Download data from yfinance"""
+    try:
+        df = yf.download(ticker, period=PERIOD, interval="1d", progress=False)
+        if df.empty:
+            return pd.DataFrame()
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+        return df
+    except:
+        return pd.DataFrame()
 
-# Check cache status
-cache_exists = os.path.exists(CACHE_DIR)
-cache_count = len(os.listdir(CACHE_DIR)) if cache_exists else 0
+def find_swing_low(df, idx, left=2, right=2):
+    """Check if index is a swing low"""
+    if idx < left or idx >= len(df) - right:
+        return False
+    current_low = df['Low'].iloc[idx]
+    for i in range(1, left + 1):
+        if df['Low'].iloc[idx - i] <= current_low:
+            return False
+    for i in range(1, right + 1):
+        if df['Low'].iloc[idx + i] <= current_low:
+            return False
+    return True
+
+def detect_liquidity_grab(df):
+    """Detect liquidity grab patterns"""
+    if len(df) < 20:
+        return df
+    
+    df = df.copy()
+    df['swing_low'] = None
+    df['liq_grab'] = False
+    df['grab_depth'] = 0.0
+    
+    # Find swing lows
+    swing_lows = []
+    for i in range(SWING_LEFT, len(df) - SWING_RIGHT):
+        if find_swing_low(df, i, SWING_LEFT, SWING_RIGHT):
+            swing_lows.append((i, df['Low'].iloc[i]))
+            df.iloc[i, df.columns.get_loc('swing_low')] = df['Low'].iloc[i]
+    
+    # Detect liquidity grabs
+    for idx in range(len(df)):
+        if idx < SWING_LEFT + SWING_RIGHT:
+            continue
+            
+        current_low = df['Low'].iloc[idx]
+        current_close = df['Close'].iloc[idx]
+        
+        for swing_idx, swing_low in swing_lows:
+            if swing_idx >= idx:
+                continue
+            if swing_idx < idx - 50:
+                continue
+                
+            # Liquidity grab: wick below swing, close above swing
+            if current_low < swing_low and current_close > swing_low:
+                depth = (swing_low - current_low) / swing_low * 100
+                if depth > 0.05:
+                    df.iloc[idx, df.columns.get_loc('liq_grab')] = True
+                    df.iloc[idx, df.columns.get_loc('grab_depth')] = depth
+                    break
+    
+    return df
+
+def get_alerts(ticker, df):
+    """Get alerts from dataframe"""
+    alerts = []
+    if 'liq_grab' not in df.columns:
+        return alerts
+    
+    grabs = df[df['liq_grab'] == True]
+    
+    for idx, row in grabs.iterrows():
+        date_str = idx.strftime('%d-%b-%Y') if hasattr(idx, 'strftime') else str(idx)
+        depth = row.get('grab_depth', 0)
+        price = row.get('Close', 0)
+        alert = f"[1D] {ticker} @ {date_str} | Rs.{price:.2f} (Depth: {depth:.2f}%)"
+        alerts.append((idx, alert))
+    
+    return alerts
 
 # ========== SIDEBAR ==========
 with st.sidebar:
     st.markdown("### ⚙️ Scan Settings")
-    
-    # Cache Status
-    if cache_count > 0:
-        st.success(f"✅ Cache Ready: {cache_count} stocks")
-    else:
-        st.error("❌ No cache found! Run build script first.")
-    
+    st.success("🌐 Live Data Mode")
     st.markdown("---")
     
-    # Scan Type Selection
-    scan_type = st.radio(
-        "📁 Select Scan Type",
-        ["INDEX", "SECTOR", "CUSTOM"],
-        horizontal=True
-    )
+    scan_type = st.radio("📁 Select Scan Type", ["INDEX", "SECTOR"], horizontal=True)
     
     selected_files = []
     
@@ -190,122 +154,79 @@ with st.sidebar:
         index_path = "INDEX CSV"
         if os.path.exists(index_path):
             all_files = sorted([f for f in os.listdir(index_path) if f.endswith('.csv')])
-            selected_ui = st.multiselect(
-                "Select Indices",
-                all_files,
-                default=all_files[:2] if len(all_files) >= 2 else all_files
-            )
+            selected_ui = st.multiselect("Select Indices", all_files, default=["nifty50.csv"] if "nifty50.csv" in all_files else all_files[:1])
             selected_files = [os.path.join(index_path, f) for f in selected_ui]
         else:
             st.warning("INDEX CSV folder not found")
             
-    elif scan_type == "SECTOR":
+    else:  # SECTOR
         sector_path = "SECTORS CSV"
         if os.path.exists(sector_path):
             all_files = sorted([f for f in os.listdir(sector_path) if f.endswith('.csv')])
-            selected_ui = st.multiselect(
-                "Select Sectors",
-                all_files,
-                default=all_files[:3] if len(all_files) >= 3 else all_files
-            )
+            selected_ui = st.multiselect("Select Sectors", all_files, default=all_files[:2] if len(all_files) >= 2 else all_files)
             selected_files = [os.path.join(sector_path, f) for f in selected_ui]
         else:
             st.warning("SECTORS CSV folder not found")
-            
-    else:  # CUSTOM
-        root_files = [f for f in os.listdir('.') if f.endswith('.csv')]
-        if root_files:
-            custom_file = st.selectbox("Select CSV File", root_files)
-            selected_files = [custom_file] if custom_file else []
-        else:
-            st.warning("No CSV files in root directory")
     
     st.markdown("---")
-    
-    # Filter Options
-    st.markdown("### 🎯 Filters")
-    days_filter = st.slider("Show signals from last N days", 1, 30, 7)
-    
+    days_filter = st.slider("Show signals from last N days", 1, 30, 10)
     st.markdown("---")
-    
-    # Scan Button
     scan_clicked = st.button("🚀 Start Scan", use_container_width=True, type="primary")
 
 # ========== MAIN CONTENT ==========
 col1, col2, col3, col4 = st.columns(4)
 
 with col1:
-    st.markdown("""
-    <div class="metric-card">
-        <h3>Cache Status</h3>
-        <div class="value">{}</div>
-    </div>
-    """.format(f"✅ {cache_count}" if cache_count > 0 else "❌ Empty"), unsafe_allow_html=True)
-
+    st.markdown("""<div class="metric-card"><h3>Data Mode</h3><div class="value">🌐 Live</div></div>""", unsafe_allow_html=True)
 with col2:
-    st.markdown("""
-    <div class="metric-card">
-        <h3>Period</h3>
-        <div class="value">{}</div>
-    </div>
-    """.format(PERIOD), unsafe_allow_html=True)
-
+    st.markdown(f"""<div class="metric-card"><h3>Period</h3><div class="value">{PERIOD}</div></div>""", unsafe_allow_html=True)
 with col3:
-    st.markdown("""
-    <div class="metric-card">
-        <h3>Selected Files</h3>
-        <div class="value">{}</div>
-    </div>
-    """.format(len(selected_files)), unsafe_allow_html=True)
-
+    st.markdown(f"""<div class="metric-card"><h3>Selected Files</h3><div class="value">{len(selected_files)}</div></div>""", unsafe_allow_html=True)
 with col4:
-    st.markdown("""
-    <div class="metric-card">
-        <h3>Last Update</h3>
-        <div class="value">{}</div>
-    </div>
-    """.format(datetime.now().strftime("%d-%b")), unsafe_allow_html=True)
+    st.markdown(f"""<div class="metric-card"><h3>Last Update</h3><div class="value">{datetime.now().strftime('%d-%b')}</div></div>""", unsafe_allow_html=True)
 
 st.markdown("---")
 
-# ========== SCAN EXECUTION ==========
+# ========== SCAN ==========
 if scan_clicked:
     if not selected_files:
-        st.error("⚠️ Please select at least one file to scan!")
+        st.error("⚠️ Please select at least one file!")
     else:
-        # Progress
         progress = st.progress(0)
         status = st.empty()
         
         all_alerts = {}
         total = len(selected_files)
+        cutoff_date = datetime.now() - timedelta(days=days_filter)
         
         for idx, csv_file in enumerate(selected_files):
             file_name = os.path.basename(csv_file).replace('.csv', '').upper()
             status.info(f"🔄 Scanning: {file_name} ({idx+1}/{total})")
             
             try:
-                # Load tickers
                 tickers_df = pd.read_csv(csv_file, header=None)
                 tickers = tickers_df.iloc[:, 0].astype(str).str.strip().tolist()
                 
                 file_alerts = {}
+                ticker_progress = st.empty()
                 
-                for ticker in tickers:
-                    cache_path = os.path.join(CACHE_DIR, f"{ticker}_{PERIOD}_1d.csv")
+                for t_idx, ticker in enumerate(tickers):
+                    ticker_progress.text(f"   Downloading: {ticker} ({t_idx+1}/{len(tickers)})")
                     
-                    if not os.path.exists(cache_path):
-                        continue
-                    
-                    df = get_data(ticker, "1d")
+                    df = download_data(ticker)
                     if df.empty:
                         continue
                     
                     df = detect_liquidity_grab(df)
-                    alerts = print_alerts(ticker, df, "1d", filter_yesterday=True)
+                    alerts = get_alerts(ticker, df)
                     
-                    if alerts:
-                        file_alerts[ticker] = alerts
+                    # Filter by date
+                    recent_alerts = [(dt, alert) for dt, alert in alerts if dt >= cutoff_date]
+                    
+                    if recent_alerts:
+                        file_alerts[ticker] = [a[1] for a in recent_alerts]
+                
+                ticker_progress.empty()
                 
                 if file_alerts:
                     all_alerts[file_name] = file_alerts
@@ -322,9 +243,8 @@ if scan_clicked:
         st.markdown("## 📋 Scan Results")
         
         if not all_alerts:
-            st.info("ℹ️ No signals found in selected files.")
+            st.info(f"ℹ️ No signals found in last {days_filter} days.")
         else:
-            # Summary
             total_signals = sum(sum(len(a) for a in f.values()) for f in all_alerts.values())
             total_stocks = sum(len(f) for f in all_alerts.values())
             
@@ -335,20 +255,15 @@ if scan_clicked:
             
             st.markdown("---")
             
-            # Results by File
             for file_name in sorted(all_alerts.keys()):
                 file_data = all_alerts[file_name]
                 signal_count = sum(len(a) for a in file_data.values())
                 
                 with st.expander(f"📁 {file_name} — {signal_count} signals", expanded=True):
-                    # Table
                     rows = []
                     for ticker, alerts_list in sorted(file_data.items()):
                         for alert in alerts_list:
-                            rows.append({
-                                "Stock": ticker,
-                                "Signal": alert.strip()
-                            })
+                            rows.append({"Stock": ticker, "Signal": alert})
                     
                     if rows:
                         df_display = pd.DataFrame(rows)
@@ -360,7 +275,6 @@ if scan_clicked:
             
             col1, col2, col3 = st.columns(3)
             
-            # CSV Export
             export_rows = []
             for fn, fd in all_alerts.items():
                 for t, al in fd.items():
@@ -382,28 +296,15 @@ if scan_clicked:
                 txt = "\n".join([f"{r['File']} | {r['Stock']} | {r['Signal']}" for r in export_rows])
                 st.download_button("📥 TXT", txt, "signals.txt", "text/plain")
 
-# ========== FOOTER ==========
+# Footer
 st.markdown("---")
-with st.expander("ℹ️ Help & Info"):
+with st.expander("ℹ️ Help"):
     st.markdown("""
-    **Liquidity Grab Pattern:**
-    - Swing low is detected
-    - Price wick goes below swing level  
-    - Candle closes above swing level (reversal signal)
+    **Liquidity Grab:** Price wicks below swing low, then closes above it (bullish reversal signal)
     
-    **Usage:**
-    1. Select INDEX/SECTOR/CUSTOM
-    2. Choose files to scan
-    3. Click Start Scan
-    4. Export results if needed
-    
-    **Cache:**
-    - Run `python build_all_caches.py` for fresh data
-    - Cache auto-cleans old dates
+    **Usage:** Select INDEX/SECTOR → Choose files → Click Start Scan → View results
     """)
 
-st.markdown("""
-<div style="text-align: center; color: #6e7681; padding: 20px; font-size: 0.85em;">
-    Liquidity Scanner v2.0 • Built with Streamlit
-</div>
-""", unsafe_allow_html=True)
+st.markdown("""<div style="text-align: center; color: #6e7681; padding: 20px; font-size: 0.85em;">
+    Liquidity Scanner v2.0 • Live Data Mode
+</div>""", unsafe_allow_html=True)
