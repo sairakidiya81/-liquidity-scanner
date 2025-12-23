@@ -452,7 +452,8 @@ if scan_clicked:
             </div>
             """, unsafe_allow_html=True)
             
-            all_signals.sort(key=lambda x: x['score'], reverse=True)
+            # Sort by date first (latest), then by score
+            all_signals.sort(key=lambda x: (x['date'], x['score']), reverse=True)
             
             a_signals = [s for s in all_signals if s['grade'] == 'A+']
             b_signals = [s for s in all_signals if s['grade'] == 'B']
