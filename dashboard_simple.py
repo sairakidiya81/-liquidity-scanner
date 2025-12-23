@@ -576,7 +576,7 @@ if scan_clicked:
                             'Current': f"₹{s['current_price']:.0f}",
                             'Distance': f"{s['distance']:.1f}%",
                             'Status': status_txt,
-                            'Age': f"{s['days_ago']}d"
+                            'Date': s['fp_date'].strftime('%d-%b')
                         })
                     
                     st.dataframe(pd.DataFrame(data), use_container_width=True, hide_index=True)
