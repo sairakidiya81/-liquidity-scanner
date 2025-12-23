@@ -28,10 +28,20 @@ MIN_WICK_PERCENT = 25
 MIN_DEPTH_PERCENT = 0.1
 OB_LOOKBACK = 3
 
-# ========== STYLES ==========
+# ========== STYLES WITH LIGHT ANIMATIONS ==========
 st.markdown("""
 <style>
     .stApp { background-color: #0e1117; }
+    
+    @keyframes glow {
+        0%, 100% { text-shadow: 0 0 5px #ffd700; }
+        50% { text-shadow: 0 0 15px #ffd700, 0 0 25px #ffd700; }
+    }
+    @keyframes fadeText {
+        0%, 100% { opacity: 0.8; }
+        50% { opacity: 1; }
+    }
+    
     .main-header {
         background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
         padding: 25px 30px;
@@ -47,8 +57,16 @@ st.markdown("""
         font-family: 'Traditional Arabic', serif;
         direction: rtl;
         margin: 10px 0;
+        animation: glow 3s ease-in-out infinite;
     }
-    .main-header p { color: #a0c4e8; margin: 5px 0 0 0; font-size: 0.95em; }
+    .main-header .tagline { 
+        color: #a0c4e8; 
+        margin: 5px 0 0 0; 
+        font-size: 0.95em;
+        animation: fadeText 4s ease-in-out infinite;
+    }
+    .main-header .tagline .highlight { color: #7ee787; }
+    
     [data-testid="stSidebar"] { background-color: #161b22; }
     
     .metric-card {
@@ -78,11 +96,6 @@ st.markdown("""
     .at-fp {
         background: linear-gradient(135deg, #0d4f3c 0%, #1a7f5a 100%);
         border-left: 4px solid #00ff88;
-        animation: pulse 2s infinite;
-    }
-    @keyframes pulse {
-        0%, 100% { box-shadow: 0 0 10px rgba(0, 255, 136, 0.3); }
-        50% { box-shadow: 0 0 25px rgba(0, 255, 136, 0.6); }
     }
     
     .mode-tag {
@@ -98,7 +111,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# ========== HEADER ==========
+# ========== HEADER WITH ANIMATION ==========
 def get_logo_base64():
     logo_path = os.path.join(os.path.dirname(__file__), "logo.png")
     if os.path.exists(logo_path):
@@ -114,7 +127,7 @@ if logo_b64:
         <div>
             <h1>TAWAQQUL SCANNER</h1>
             <p class="arabic">بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ</p>
-            <p>Institutional Liquidity Detection • Smart Money Concepts</p>
+            <p class="tagline">Institutional Liquidity Detection • <span class="highlight">Fair Value Discovery</span></p>
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -123,7 +136,7 @@ else:
     <div class="main-header">
         <h1>🎯 TAWAQQUL SCANNER</h1>
         <p class="arabic">بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ</p>
-        <p>Institutional Liquidity Detection • Smart Money Concepts</p>
+        <p class="tagline">Institutional Liquidity Detection • <span class="highlight">Fair Value Discovery</span></p>
     </div>
     """, unsafe_allow_html=True)
 
@@ -247,9 +260,8 @@ def detect_fair_price_zone(df, sweep):
     """Detect Fair Price zone (Order Block) after liquidity sweep"""
     sweep_idx = sweep['sweep_idx']
     
-    # Find last bearish candle before/at sweep
     for i in range(sweep_idx, max(sweep_idx - OB_LOOKBACK, 0), -1):
-        if df['Close'].iloc[i] < df['Open'].iloc[i]:  # Red candle
+        if df['Close'].iloc[i] < df['Open'].iloc[i]:
             return {
                 'fp_idx': i,
                 'fp_date': df.index[i],
@@ -257,7 +269,6 @@ def detect_fair_price_zone(df, sweep):
                 'fp_low': df['Low'].iloc[i]
             }
     
-    # Fallback to sweep candle
     return {
         'fp_idx': sweep_idx,
         'fp_date': df.index[sweep_idx],
@@ -296,7 +307,6 @@ def scan_fair_price_setups(df, ticker, max_days=20):
         if days_ago > max_days:
             continue
         
-        # Check if FP zone still valid (not broken)
         fp_valid = True
         for i in range(fp['fp_idx'] + 1, len(df)):
             if df['Close'].iloc[i] < fp['fp_low']:
@@ -330,7 +340,6 @@ def scan_fair_price_setups(df, ticker, max_days=20):
 with st.sidebar:
     st.markdown("### ⚙️ Scan Settings")
     
-    # MODE SELECTION
     st.markdown("#### 🎯 Select Mode")
     scan_mode = st.radio(
         "Choose what to scan:",
@@ -342,7 +351,7 @@ with st.sidebar:
     if scan_mode == "💧 Liquidity Sweep":
         st.info("🔍 Finds stocks where liquidity was just swept")
     else:
-        st.success("🎯 Finds stocks at Fair Price (Order Block) zone")
+        st.success("🎯 Finds stocks at Fair Price zone")
     
     st.markdown("---")
     
@@ -388,7 +397,6 @@ if scan_clicked:
         status = st.empty()
         
         if scan_mode == "💧 Liquidity Sweep":
-            # ========== LIQUIDITY SWEEP MODE ==========
             all_signals = []
             cutoff_date = datetime.now() - timedelta(days=days_filter)
             
@@ -425,7 +433,6 @@ if scan_clicked:
             progress.empty()
             status.empty()
             
-            # Display Liquidity Sweep Results
             st.markdown("---")
             st.markdown(f"""
             <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 20px;">
@@ -433,7 +440,6 @@ if scan_clicked:
             </div>
             """, unsafe_allow_html=True)
             
-            all_signals.sort(key=lambda x: (-x['score'], x['date']), reverse=False)
             all_signals.sort(key=lambda x: x['score'], reverse=True)
             
             a_signals = [s for s in all_signals if s['grade'] == 'A+']
@@ -471,7 +477,6 @@ if scan_clicked:
                 st.info("No liquidity sweep signals found with current filters.")
         
         else:
-            # ========== FAIR PRICE MODE ==========
             all_setups = []
             
             total = len(selected_files)
@@ -502,14 +507,11 @@ if scan_clicked:
             progress.empty()
             status.empty()
             
-            # Filter if needed
             if show_at_fp_only:
                 all_setups = [s for s in all_setups if s['at_fp_zone']]
             
-            # Sort
             all_setups.sort(key=lambda x: (not x['at_fp_zone'], x['days_ago']))
             
-            # Display Fair Price Results
             st.markdown("---")
             st.markdown(f"""
             <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 20px;">
@@ -533,7 +535,6 @@ if scan_clicked:
             st.markdown("---")
             
             if all_setups:
-                # AT FAIR PRICE - HOT!
                 at_fp_setups = [s for s in all_setups if s['at_fp_zone']]
                 if at_fp_setups:
                     st.markdown("## 🔥 PRICE AT FAIR PRICE ZONE - HOT SETUPS!")
@@ -556,7 +557,6 @@ if scan_clicked:
                         </div>
                         """, unsafe_allow_html=True)
                 
-                # Other setups
                 other_setups = [s for s in all_setups if not s['at_fp_zone']]
                 if other_setups:
                     st.markdown("---")
@@ -564,14 +564,14 @@ if scan_clicked:
                     st.caption("Valid zones - wait for price to reach Fair Price")
                     
                     data = []
-                    for s in other_setups[:20]:  # Show top 20
-                        status = "⬆️ Above" if s['current_price'] > s['fp_high'] else "⬇️ Below"
+                    for s in other_setups[:20]:
+                        status_txt = "⬆️ Above" if s['current_price'] > s['fp_high'] else "⬇️ Below"
                         data.append({
                             'Ticker': s['ticker'].replace('.NS', ''),
                             'Fair Price Zone': f"₹{s['fp_low']:.0f} - ₹{s['fp_high']:.0f}",
                             'Current': f"₹{s['current_price']:.0f}",
                             'Distance': f"{s['distance']:.1f}%",
-                            'Status': status,
+                            'Status': status_txt,
                             'Age': f"{s['days_ago']}d"
                         })
                     
@@ -585,22 +585,8 @@ with st.expander("ℹ️ How It Works"):
     ### 💧 Liquidity Sweep Mode
     Detects when price sweeps below a swing low and closes above it - a bullish reversal signal.
     
-    **What it finds:**
-    - Swing low formations (2, 3, 5 candle swings)
-    - Price dipping below swing (hunting stop losses)
-    - Strong close above swing (rejection/reversal)
-    - Quality score based on wick, depth, and swing type
-    
-    ---
-    
     ### 💰 Fair Price Mode
-    After a liquidity sweep, marks the "Fair Price Zone" (Order Block) where institutions bought.
-    
-    **What it finds:**
-    - Valid liquidity sweep first
-    - Fair Price Zone = Last red candle before the move up
-    - Alerts when current price returns to Fair Price zone
-    - This is where smart money defends their positions!
+    After a liquidity sweep, marks the "Fair Price Zone" where institutions bought.
     
     **🎯 Best Entry:** When price is AT Fair Price zone after a valid sweep!
     """)
