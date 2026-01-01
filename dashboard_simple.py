@@ -390,12 +390,12 @@ with st.sidebar:
     
     st.markdown("---")
     
-    if scan_mode == "💧 Liquidity Sweep":
-        days_filter = st.slider("Show signals from last N days", 1, 30, 10)
-        min_score = st.slider("Minimum Score", 0, 100, 40)
-    else:
-        days_filter = st.slider("Fair Price formed within N days", 5, 30, 15)
-        show_at_fp_only = st.checkbox("🎯 Show only 'At Fair Price' stocks", value=False)
+    st.markdown("#### 📅 Select Date Range")
+    start_date = st.date_input("From Date", value=datetime.now() - timedelta(days=15 if scan_mode == "💰 Fair Price Zone" else 10))
+    days_filter = (datetime.now().date() - start_date).days
+    
+    if scan_mode == "💰 Fair Price Zone":
+        show_at_fp_only = True
     
     st.markdown("---")
     scan_clicked = st.button("🚀 Start Scan", use_container_width=True, type="primary")
@@ -435,7 +435,7 @@ if scan_clicked:
                         
                         for sweep in sweeps:
                             sweep['ticker'] = ticker
-                            if sweep['date'] >= pd.Timestamp(cutoff_date) and sweep['score'] >= min_score:
+                            if sweep['date'] >= pd.Timestamp(cutoff_date):
                                 all_signals.append(sweep)
                         
                         progress.progress((file_idx + (i+1)/len(tickers)) / total)
